@@ -171,7 +171,7 @@ app.post("/send-otp", async (req, res) => {
   try {
 await resend.emails.send({
   from: 'Chatify <onboarding@resend.dev>',
-  to: email,
+  to: 'dark94369@gmail.com',
   subject: 'Your Chatify OTP Code',
   html: generateOtpTemplate(otp)
 });
@@ -222,7 +222,7 @@ app.post("/resend-otp", async (req, res) => {
   try {
 await resend.emails.send({
   from: 'Chatify <onboarding@resend.dev>',
-  to: email,
+  to: 'dark94369@gmail.com',
   subject: 'Your Chatify OTP Code',
   html: generateOtpTemplate(otp)
 });
