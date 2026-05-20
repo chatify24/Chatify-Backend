@@ -174,12 +174,12 @@ app.post("/send-otp", async (req, res) => {
 // Reusable OTP Email Template
 
   try {
-  await transporter.sendMail({
-  from: "chatifyteam.24@gmail.com",
+await transporter.sendMail({
+  from: process.env.BREVO_EMAIL,
   to: email,
   subject: "Your Chatify OTP Code",
   html: generateOtpTemplate(otp)
-});
+});;
 
     res.json({ success: true });
   } catch (err) {
