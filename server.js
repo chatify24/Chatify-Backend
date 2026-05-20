@@ -13,9 +13,10 @@ import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
-
+import { Resend } from 'resend';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 
 // Helper function to convert conversation_id string to UUID
 function stringToUUID(str) {
@@ -34,6 +35,7 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
+const resend = new Resend(process.env.RESEND_API_KEY);
 cloudinary.v2.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
@@ -43,13 +45,7 @@ const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABAS
 const app = express();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
-app.use(cors({
-  origin: [
-    "http://localhost:8080",
-    "https://getchatifyapp.netlify.app"
-  ],
-  credentials: true
-}));
+app.use(cors());
 app.use(express.json());
 app.use(session({
   secret: "chatifysecret",
@@ -150,11 +146,10 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 // Gmail transporter
 const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
+  service: "gmail",
   auth: {
-    user: process.env.BREVO_EMAIL,
-    pass: process.env.BREVO_SMTP_KEY,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -174,12 +169,12 @@ app.post("/send-otp", async (req, res) => {
 // Reusable OTP Email Template
 
   try {
-await transporter.sendMail({
-  from: process.env.BREVO_EMAIL,
+await resend.emails.send({
+  from: 'Chatify <onboarding@resend.dev>',
   to: email,
-  subject: "Your Chatify OTP Code",
+  subject: 'Your Chatify OTP Code',
   html: generateOtpTemplate(otp)
-});;
+});
 
     res.json({ success: true });
   } catch (err) {
@@ -225,14 +220,12 @@ app.post("/resend-otp", async (req, res) => {
   };
 
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Your New Chatify OTP Code",
-       html: generateOtpTemplate(otp)
-
-    
-    });
+await resend.emails.send({
+  from: 'Chatify <onboarding@resend.dev>',
+  to: email,
+  subject: 'Your Chatify OTP Code',
+  html: generateOtpTemplate(otp)
+});
 
     res.json({ success: true });
   } catch (err) {
@@ -271,7 +264,7 @@ app.get(
     const email = req.user.emails[0].value; // Google से selected email
 
     // frontend को भेज दो
-res.redirect(`https://getchatifyapp.netlify.app/google-auth?email=${encodeURIComponent(email)}&mode=${mode}`);
+    res.redirect(`http://localhost:8080/google-auth?email=${encodeURIComponent(email)}&mode=${mode}`);
   }
 );
 app.post("/upload-profile", upload.single("image"), async (req, res) => {
