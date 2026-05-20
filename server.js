@@ -146,7 +146,9 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 // Gmail transporter
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -169,10 +171,10 @@ app.post("/send-otp", async (req, res) => {
 // Reusable OTP Email Template
 
   try {
-await resend.emails.send({
-  from: 'Chatify <onboarding@resend.dev>',
-  to: 'dark94369@gmail.com',
-  subject: 'Your Chatify OTP Code',
+await transporter.sendMail({
+  from: `"Chatify" <${process.env.EMAIL_USER}>`,
+  to: email,
+  subject: "Your Chatify OTP Code",
   html: generateOtpTemplate(otp)
 });
 
@@ -220,10 +222,10 @@ app.post("/resend-otp", async (req, res) => {
   };
 
   try {
-await resend.emails.send({
-  from: 'Chatify <onboarding@resend.dev>',
-  to: 'dark94369@gmail.com',
-  subject: 'Your Chatify OTP Code',
+await transporter.sendMail({
+  from: `"Chatify" <${process.env.EMAIL_USER}>`,
+  to: email,
+  subject: "Your Chatify OTP Code",
   html: generateOtpTemplate(otp)
 });
 
