@@ -43,7 +43,13 @@ const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABAS
 const app = express();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:8080",
+    "https://getchatifyapp.netlify.app"
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(session({
   secret: "chatifysecret",
@@ -144,10 +150,11 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 // Gmail transporter
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp-relay.brevo.com",
+  port: 587,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.BREVO_EMAIL,
+    pass: process.env.BREVO_SMTP_KEY,
   },
 });
 
@@ -167,12 +174,12 @@ app.post("/send-otp", async (req, res) => {
 // Reusable OTP Email Template
 
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Your Chatify OTP Code",
-      html: generateOtpTemplate(otp)
-    });
+  await transporter.sendMail({
+  from: "chatifyteam.24@gmail.com",
+  to: email,
+  subject: "Your Chatify OTP Code",
+  html: generateOtpTemplate(otp)
+});
 
     res.json({ success: true });
   } catch (err) {
@@ -264,7 +271,7 @@ app.get(
     const email = req.user.emails[0].value; // Google से selected email
 
     // frontend को भेज दो
-    res.redirect(`http://localhost:8080/google-auth?email=${encodeURIComponent(email)}&mode=${mode}`);
+res.redirect(`https://getchatifyapp.netlify.app/google-auth?email=${encodeURIComponent(email)}&mode=${mode}`);
   }
 );
 app.post("/upload-profile", upload.single("image"), async (req, res) => {
