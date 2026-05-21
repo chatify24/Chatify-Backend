@@ -34,6 +34,15 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
+cloudinary.v2.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUD_API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET,
+  secure: true, // 🔥 YEH ADD KARO
+});
+
+// 🔥 Verify config
+console.log("Cloudinary configured:", cloudinary.v2.config());
 const defaultClient = SibApiV3Sdk.ApiClient.instance;
 const apiKey = defaultClient.authentications['api-key'];
 apiKey.apiKey = process.env.BREVO_API_KEY;
