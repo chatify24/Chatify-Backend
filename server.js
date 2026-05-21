@@ -277,10 +277,10 @@ app.post("/upload-profile", upload.single("image"), async (req, res) => {
 
     res.json({ imageUrl: result.secure_url });
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Upload failed" });
-  }
+ } catch (err) {
+  console.error("CLOUDINARY ERROR:", err?.message, JSON.stringify(err));
+  res.status(500).json({ error: err?.message || "Upload failed" });
+}
 });
 app.post("/upload-audio", upload.single("audio"), async (req, res) => {
   try {
