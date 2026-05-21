@@ -259,6 +259,13 @@ app.get(
 );
 app.post("/upload-profile", upload.single("image"), async (req, res) => {
   try {
+    // 🔥 DEBUG
+    console.log("CLOUDINARY CHECK:", {
+      cloud_name: process.env.CLOUD_NAME || "MISSING",
+      api_key: process.env.CLOUD_API_KEY ? "SET" : "MISSING",
+      api_secret: process.env.CLOUD_API_SECRET ? "SET" : "MISSING",
+    });
+
     if (!req.file) {
       return res.status(400).json({ error: "No image uploaded" });
     }
@@ -277,10 +284,10 @@ app.post("/upload-profile", upload.single("image"), async (req, res) => {
 
     res.json({ imageUrl: result.secure_url });
 
- } catch (err) {
-  console.error("CLOUDINARY ERROR:", err?.message, JSON.stringify(err));
-  res.status(500).json({ error: err?.message || "Upload failed" });
-}
+  } catch (err) {
+    console.error("CLOUDINARY ERROR:", err?.message, JSON.stringify(err));
+    res.status(500).json({ error: err?.message || "Upload failed" });
+  }
 });
 app.post("/upload-audio", upload.single("audio"), async (req, res) => {
   try {
