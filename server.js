@@ -514,25 +514,8 @@ if (userId) {
     });
 }
 
-  // Handle disconnect
-socket.on("disconnect", () => {
-  for (const [email, u] of onlineUsers.entries()) {
-    if (u.socketId === socket.id) {
-      onlineUsers.delete(email);
-      socket.broadcast.emit("user_offline", email);
-      
-      // 🔥 YEH ADD KARO - offline hone pe last_seen set karo
-      supabaseAdmin
-        .from("profiles")
-        .update({ last_seen: new Date().toISOString() })
-        .eq("email", email)
-        .then(({ error }) => {
-          if (error) console.error("last_seen disconnect update error:", error);
-        });
-      break;
-    }
-  }
-});
+
+
   socket.on("edit_message", async (data) => {
   const { messageId, content, recipientId } = data;
 
