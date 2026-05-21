@@ -500,32 +500,39 @@ io.on("connection", async (socket) => {
   const userName = socket.handshake.auth.userName;
   const userAvatar = socket.handshake.auth.userAvatar;
 
-  if (userId) {
-    onlineUsers.set(userId, {
-      socketId: socket.id,
-      name: userName,
-      avatar: userAvatar,
+if (userId) {
+  onlineUsers.set(userId, { socketId: socket.id, name: userName, avatar: userAvatar });
+  socket.broadcast.emit("user_online", userId);
+  
+  // 🔥 YEH ADD KARO - server side se last_seen update karo
+  supabaseAdmin
+    .from("profiles")
+    .update({ last_seen: new Date().toISOString() })
+    .eq("email", userId)
+    .then(({ error }) => {
+      if (error) console.error("last_seen update error:", error);
     });
-
-    // Notify others that user is online
-    socket.broadcast.emit("user_online", userId);
-    console.log(`👤 ${userName} (${userId}) is now online`);
-  }
+}
 
   // Handle disconnect
-  socket.on("disconnect", () => {
-    console.log("❌ Socket.IO disconnect:", socket.id);
-    // Remove from online users
-    for (const [email, user] of onlineUsers.entries()) {
-      if (user.socketId === socket.id) {
-        onlineUsers.delete(email);
-        // Notify others that user is offline
-        socket.broadcast.emit("user_offline", email);
-        console.log(`👤 ${email} is now offline`);
-        break;
-      }
+socket.on("disconnect", () => {
+  for (const [email, u] of onlineUsers.entries()) {
+    if (u.socketId === socket.id) {
+      onlineUsers.delete(email);
+      socket.broadcast.emit("user_offline", email);
+      
+      // 🔥 YEH ADD KARO - offline hone pe last_seen set karo
+      supabaseAdmin
+        .from("profiles")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("email", email)
+        .then(({ error }) => {
+          if (error) console.error("last_seen disconnect update error:", error);
+        });
+      break;
     }
-  });
+  }
+});
   socket.on("edit_message", async (data) => {
   const { messageId, content, recipientId } = data;
 
