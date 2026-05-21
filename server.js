@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import nodemailer from "nodemailer";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
@@ -12,8 +11,8 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
+import * as Brevo from '@getbrevo/brevo';
 import crypto from "crypto";
-import { Resend } from 'resend';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -35,12 +34,18 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
-const resend = new Resend(process.env.RESEND_API_KEY);
-cloudinary.v2.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUD_API_KEY,
-  api_secret: process.env.CLOUD_API_SECRET,
-}); 
+const brevoClient = new Brevo.TransactionalEmailsApi();
+brevoClient.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
+
+const sendEmail = async (to, subject, html) => {
+  await brevoClient.sendTransacEmail({
+    sender: { name: "Chatify", email: process.env.BREVO_SENDER_EMAIL },
+    to: [{ email: to }],
+    subject: subject,
+    htmlContent: html,
+  });
+};
+
 const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const app = express();
 const storage = multer.memoryStorage();
@@ -144,16 +149,7 @@ If this wasn't you, you can safely ignore this email.<br><br>
 `;
 };
 
-// Gmail transporter
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+
 
 // Send OTP
 app.post("/send-otp", async (req, res) => {
@@ -171,12 +167,7 @@ app.post("/send-otp", async (req, res) => {
 // Reusable OTP Email Template
 
   try {
-await transporter.sendMail({
-  from: `"Chatify" <${process.env.EMAIL_USER}>`,
-  to: email,
-  subject: "Your Chatify OTP Code",
-  html: generateOtpTemplate(otp)
-});
+await sendEmail(email, "Your Chatify OTP Code", generateOtpTemplate(otp));
 
     res.json({ success: true });
   } catch (err) {
@@ -222,12 +213,7 @@ app.post("/resend-otp", async (req, res) => {
   };
 
   try {
-await transporter.sendMail({
-  from: `"Chatify" <${process.env.EMAIL_USER}>`,
-  to: email,
-  subject: "Your Chatify OTP Code",
-  html: generateOtpTemplate(otp)
-});
+await sendEmail(email, "Your Chatify OTP Code", generateOtpTemplate(otp));
 
     res.json({ success: true });
   } catch (err) {
