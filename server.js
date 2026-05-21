@@ -11,7 +11,7 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
-import * as Brevo from '@getbrevo/brevo';
+import SibApiV3Sdk from 'sib-api-v3-sdk';
 import crypto from "crypto";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,11 +34,13 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
-const brevoClient = new Brevo.TransactionalEmailsApi();
-brevoClient.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 const sendEmail = async (to, subject, html) => {
-  await brevoClient.sendTransacEmail({
+  const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+  await apiInstance.sendTransacEmail({
     sender: { name: "Chatify", email: process.env.BREVO_SENDER_EMAIL },
     to: [{ email: to }],
     subject: subject,
