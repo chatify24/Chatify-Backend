@@ -1090,6 +1090,10 @@ app.post("/accept-friend-request", async (req, res) => {
   }
 });
 
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
