@@ -161,7 +161,12 @@ If this wasn't you, you can safely ignore this email.<br><br>
 };
 
 
-
+app.get('/app-version', (req, res) => {
+  res.json({ 
+    version: '1.2.2',
+    apk_url: 'https://github.com/chatify24/Chatify/releases/download/v1.2.2/Chatify.apk'
+  });
+});
 // Send OTP
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
