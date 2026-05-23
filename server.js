@@ -163,8 +163,8 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 app.get('/app-version', (req, res) => {
   res.json({ 
-    version: '1.2.2',
-    apk_url: 'https://github.com/chatify24/Chatify/releases/download/v1.2.2/Chatify.apk'
+    version: '1.2.3',
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.1.3/Chatify.apk'
   });
 });
 // Send OTP
