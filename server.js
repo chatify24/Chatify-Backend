@@ -494,7 +494,30 @@ const io = new SocketIOServer(httpServer, {
 });
 
 // Store online users
-const onlineUsers = new Map();
+// Replace: const onlineUsers = new Map();
+const onlineUsers = new Map(); // userId -> Map(socketId -> {name, avatar})
+
+function addUserSocket(userId, socketId, name, avatar) {
+  if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Map());
+  onlineUsers.get(userId).set(socketId, { name, avatar });
+}
+
+function removeUserSocket(userId, socketId) {
+  const sockets = onlineUsers.get(userId);
+  if (sockets) {
+    sockets.delete(socketId);
+    if (sockets.size === 0) onlineUsers.delete(userId);
+  }
+}
+
+function getUserSockets(userId) {
+  const sockets = onlineUsers.get(userId);
+  return sockets ? Array.from(sockets.keys()) : [];
+}
+
+function isUserOnline(userId) {
+  return onlineUsers.has(userId) && onlineUsers.get(userId).size > 0;
+}
 const conversationRooms = new Map();
 
 io.on("connection", async (socket) => {
@@ -506,10 +529,13 @@ io.on("connection", async (socket) => {
   const userAvatar = socket.handshake.auth.userAvatar;
 
 if (userId) {
-  onlineUsers.set(userId, { socketId: socket.id, name: userName, avatar: userAvatar });
-  socket.broadcast.emit("user_online", userId);
-  
-  // 🔥 YEH ADD KARO - server side se last_seen update karo
+  const wasOnline = isUserOnline(userId);
+  addUserSocket(userId, socket.id, userName, userAvatar);
+
+  if (!wasOnline) {
+    socket.broadcast.emit("user_online", userId);
+  }
+
   supabaseAdmin
     .from("profiles")
     .update({ last_seen: new Date().toISOString() })
@@ -521,30 +547,25 @@ if (userId) {
 
 
 
-  socket.on("edit_message", async (data) => {
+socket.on("edit_message", async (data) => {
   const { messageId, content, recipientId } = data;
 
-  // 🔥 DB update
   await supabaseAdmin
     .from("messages")
-    .update({ 
-  content,
-  edited: true   // 🔥 ADD THIS
-})
+    .update({ content, edited: true })
     .eq("id", messageId);
 
-  // 🔥 sender ko update
-  socket.emit("message_edited", { messageId, content ,edited:true});
+  // 🔥 sender ke OTHER devices ko bhi update (khud ka current socket already local update kar chuka hai)
+  const senderOtherSockets = getUserSockets(userId).filter((id) => id !== socket.id);
+  senderOtherSockets.forEach((sockId) => {
+    io.to(sockId).emit("message_edited", { messageId, content, edited: true });
+  });
 
-  // 🔥 receiver ko update
-  const recipient = onlineUsers.get(recipientId?.toLowerCase().trim());
-
-  if (recipient) {
-    io.to(recipient.socketId).emit("message_edited", {
-      messageId,
-      content,
-    });
-  }
+  // 🔥 receiver ke saare devices ko update
+  const recipientSockets = getUserSockets(recipientId?.toLowerCase().trim());
+  recipientSockets.forEach((sockId) => {
+    io.to(sockId).emit("message_edited", { messageId, content, edited: true });
+  });
 });
   // Request pending messages
 // server.js mein replace karo poora request_pending_messages handler
@@ -706,26 +727,37 @@ socket.on("request_pending_messages", async () => {
         console.log(`[v0] DEBUG: Message saved to DB - ID=${insertedData?.[0]?.id}, status=sent`);
       }
 
-      // Send message to recipient
-      const recipient = onlineUsers.get(normalizedRecipientId);
-      if (recipient) {
-        io.to(recipient.socketId).emit("receive_message", {
-          id: insertedData?.[0]?.id,
-          clientId: messageId, 
-          senderId,
-          senderName,
-          recipientId, 
-          senderAvatar,
-          content,
-          replyTo: data.replyTo,
-          timestamp: new Date(timestamp),
-          conversationId,
-          status: "sent", // 🔥 Mark as delivered to recipient
-        });
+// Send message to recipient (all their devices)
+      const recipientSockets = getUserSockets(normalizedRecipientId);
+      const messagePayload = {
+        id: insertedData?.[0]?.id,
+        clientId: messageId,
+        senderId,
+        senderName,
+        recipientId,
+        senderAvatar,
+        content,
+        replyTo: data.replyTo,
+        timestamp: new Date(timestamp),
+        conversationId,
+        status: "sent",
+      };
+
+      recipientSockets.forEach((sockId) => {
+        io.to(sockId).emit("receive_message", messagePayload);
+      });
+
+      if (recipientSockets.length > 0) {
         console.log(`💬 Message sent from ${senderName} to ${recipientId}`);
       } else {
         console.log(`⚠️ Recipient ${recipientId} is offline - message saved with status='sent'`);
       }
+
+      // 🔥 Sender ke OTHER devices ko bhi bhejo (phone→laptop sync)
+      const senderOtherSockets = getUserSockets(senderId).filter((id) => id !== socket.id);
+      senderOtherSockets.forEach((sockId) => {
+        io.to(sockId).emit("receive_message", messagePayload);
+      });
     } catch (err) {
       console.error("❌ Error handling message:", err);
       socket.emit("message_error", { error: "Failed to send message" });
@@ -737,16 +769,11 @@ socket.on("request_pending_messages", async () => {
   socket.on("user_typing", (data) => {
     const { recipientId, isTyping } = data;
     const normalizedRecipient = recipientId?.toLowerCase().trim();
-const recipient = onlineUsers.get(normalizedRecipient);
+    const recipientSockets = getUserSockets(normalizedRecipient);
 
-console.log("🎯 Looking for:", normalizedRecipient);
-console.log("📡 Available users:", Array.from(onlineUsers.keys()));
-    if (recipient) {
-      io.to(recipient.socketId).emit("user_typing", {
-        userId,
-        isTyping,
-      });
-    }
+    recipientSockets.forEach((sockId) => {
+      io.to(sockId).emit("user_typing", { userId, isTyping });
+    });
   });
 
   // Delete message for everyone
@@ -772,17 +799,21 @@ socket.on("delete_message_for_everyone", async (data) => {
       console.log("✅ Message soft deleted in DB:", messageId);
     }
 
-    // Sender ko confirm karo
+// Sender ka current socket confirm
     socket.emit("message_deleted_for_everyone", { messageId });
 
-    // Recipient online hai toh usse bhi bhejo
-    const recipient = onlineUsers.get(recipientId?.toLowerCase().trim());
-    if (recipient) {
-      io.to(recipient.socketId).emit("message_deleted_for_everyone", { messageId });
-      console.log(`✅ Delete event sent to recipient: ${recipientId}`);
-    } else {
-      console.log(`⚠️ Recipient ${recipientId} offline - DB already updated`);
-    }
+    // 🔥 Sender ke OTHER devices ko bhi bhejo
+    const senderOtherSockets = getUserSockets(senderId).filter((id) => id !== socket.id);
+    senderOtherSockets.forEach((sockId) => {
+      io.to(sockId).emit("message_deleted_for_everyone", { messageId });
+    });
+
+    // Recipient ke saare devices ko bhejo
+    const recipientSockets = getUserSockets(recipientId?.toLowerCase().trim());
+    recipientSockets.forEach((sockId) => {
+      io.to(sockId).emit("message_deleted_for_everyone", { messageId });
+    });
+    console.log(`✅ Delete event sent to recipient: ${recipientId}`);
 
   } catch (err) {
     console.error("❌ Error handling delete:", err);
@@ -813,42 +844,52 @@ socket.on("delete_message_for_everyone", async (data) => {
         console.log(`✅ BACKEND: Updated read status for ${messageIds.length} messages`);
       }
 
-      // Send read receipt to sender with timestamp
+// Send read receipt to sender's (recipientId here = original sender) all devices
       const normalizedRecipient = recipientId?.toLowerCase().trim();
-      const recipient = onlineUsers.get(normalizedRecipient);
-      console.log(`[v0] 👁️  BACKEND: Received read from ${readerId}, sending receipt to sender ${recipientId}`);
-      console.log("[v0] BACKEND: Looking for recipient:", recipientId, "Normalized:", normalizedRecipient, "Found:", !!recipient);
-      console.log("[v0] BACKEND: Online users:", Array.from(onlineUsers.keys()));
-      if (recipient) {
-        io.to(recipient.socketId).emit("messages_read", {
+      const recipientSockets = getUserSockets(normalizedRecipient);
+
+      recipientSockets.forEach((sockId) => {
+        io.to(sockId).emit("messages_read", {
           messageIds,
           readerId,
           timestamp: readTimestamp,
           status: "read",
         });
-        console.log(`[v0] ✅ BACKEND: Read receipt SENT to ${recipientId} for ${messageIds.length} messages`);
-      } else {
-        console.log(`[v0] ⚠️  BACKEND: Sender ${recipientId} is OFFLINE - will sync when they come online`);
-      }
+      });
+
+      // 🔥 Reader ke OTHER devices ko bhi sync karo (taki dusre device pe bhi "read" dikhe)
+      const readerOtherSockets = getUserSockets(readerId).filter((id) => id !== socket.id);
+      readerOtherSockets.forEach((sockId) => {
+        io.to(sockId).emit("messages_read", {
+          messageIds,
+          readerId,
+          timestamp: readTimestamp,
+          status: "read",
+        });
+      });
+
+      console.log(`[v0] Read receipt processed for ${recipientSockets.length} sender devices`);
     } catch (err) {
       console.error("❌ Error handling read receipt:", err);
     }
   });
-  socket.on("pin_message", async (data) => {
+socket.on("pin_message", async (data) => {
   const { recipientId, messageId, isPinned, contactKey } = data;
-  
-  // Save to DB (optional but recommended)
-  // ...
 
-  // Notify recipient if online
-  const recipient = onlineUsers.get(recipientId?.toLowerCase().trim());
-  if (recipient) {
-    io.to(recipient.socketId).emit("message_pinned", {
-  messageId,
-  isPinned,
-  contactKey: userId, // ✅ sender ki socket userId = sender ka email
-});
-  }
+  const recipientSockets = getUserSockets(recipientId?.toLowerCase().trim());
+  recipientSockets.forEach((sockId) => {
+    io.to(sockId).emit("message_pinned", {
+      messageId,
+      isPinned,
+      contactKey: userId,
+    });
+  });
+
+  // 🔥 Sender ke OTHER devices ko bhi sync
+  const senderOtherSockets = getUserSockets(userId).filter((id) => id !== socket.id);
+  senderOtherSockets.forEach((sockId) => {
+    io.to(sockId).emit("message_pinned", { messageId, isPinned, contactKey });
+  });
 });
 
   // Block user event
@@ -893,29 +934,25 @@ socket.on("block_user", async (data) => {
       console.log(`✅ Block updated in DB`);
     }
 
-    // 4️⃣ Notify recipient (jisko block kiya)
-    const recipient = onlineUsers.get(normalizedRecipient);
-    if (recipient) {
-      io.to(recipient.socketId).emit("user_blocked", {
+   // 4️⃣ Notify recipient (jisko block kiya) - saare devices
+    const recipientSockets = getUserSockets(normalizedRecipient);
+    recipientSockets.forEach((sockId) => {
+      io.to(sockId).emit("user_blocked", {
         blockerUserId,
         recipientId: normalizedRecipient,
       });
-      console.log(`📤 Block notification sent to recipient ${normalizedRecipient}`);
-    }
+    });
+    console.log(`📤 Block notification sent to recipient ${normalizedRecipient}`);
 
-    // 🔥 5️⃣ Same account ke doosre browsers/tabs ko sync karo
-    for (const [email, onlineUser] of onlineUsers.entries()) {
-      if (
-        email === blockerUserId &&
-        onlineUser.socketId !== socket.id
-      ) {
-        io.to(onlineUser.socketId).emit("block_synced", {
-          blockedUserId: normalizedRecipient,
-          action: "block",
-        });
-        console.log(`🔄 Block synced to another tab of ${blockerUserId}`);
-      }
-    }
+    // 🔥 5️⃣ Same account ke doosre devices ko sync karo
+    const blockerOtherSockets = getUserSockets(blockerUserId).filter((id) => id !== socket.id);
+    blockerOtherSockets.forEach((sockId) => {
+      io.to(sockId).emit("block_synced", {
+        blockedUserId: normalizedRecipient,
+        action: "block",
+      });
+    });
+    console.log(`🔄 Block synced to other devices of ${blockerUserId}`);
 
   } catch (err) {
     console.error("❌ Error handling block user:", err);
@@ -963,42 +1000,40 @@ socket.on("unblock_user", async (data) => {
       console.log(`✅ Unblock updated in DB`);
     }
 
-    // 4️⃣ Notify recipient (jisko unblock kiya)
-    const recipient = onlineUsers.get(normalizedRecipient);
-    if (recipient) {
-      io.to(recipient.socketId).emit("user_unblocked", {
+    // 4️⃣ Notify recipient (jisko unblock kiya) - saare devices
+    const recipientSockets = getUserSockets(normalizedRecipient);
+    recipientSockets.forEach((sockId) => {
+      io.to(sockId).emit("user_unblocked", {
         blockerUserId: unblockerUserId,
         recipientId: normalizedRecipient,
       });
-      console.log(`📤 Unblock notification sent to ${normalizedRecipient}`);
-    }
+    });
+    console.log(`📤 Unblock notification sent to ${normalizedRecipient}`);
 
-    // 🔥 5️⃣ Same account ke doosre browsers/tabs ko sync karo
-    for (const [email, onlineUser] of onlineUsers.entries()) {
-      if (
-        email === unblockerUserId &&
-        onlineUser.socketId !== socket.id
-      ) {
-        io.to(onlineUser.socketId).emit("block_synced", {
-          blockedUserId: normalizedRecipient,
-          action: "unblock",
-        });
-        console.log(`🔄 Unblock synced to another tab of ${unblockerUserId}`);
-      }
-    }
+    // 🔥 5️⃣ Same account ke doosre devices ko sync karo
+    const unblockerOtherSockets = getUserSockets(unblockerUserId).filter((id) => id !== socket.id);
+    unblockerOtherSockets.forEach((sockId) => {
+      io.to(sockId).emit("block_synced", {
+        blockedUserId: normalizedRecipient,
+        action: "unblock",
+      });
+    });
+    console.log(`🔄 Unblock synced to other devices of ${unblockerUserId}`);
 
   } catch (err) {
     console.error("❌ Error handling unblock user:", err);
   }
 });
   // User disconnects
-  socket.on("disconnect", () => {
-    if (userId && onlineUsers.has(userId)) {
-      onlineUsers.delete(userId);
+socket.on("disconnect", () => {
+  if (userId) {
+    removeUserSocket(userId, socket.id);
+    if (!isUserOnline(userId)) {
       socket.broadcast.emit("user_offline", userId);
-      console.log(`👋 ${userName} (${userId}) is now offline`);
     }
-  });
+    console.log(`👋 ${userName} (${userId}) socket disconnected: ${socket.id}`);
+  }
+});
 
   socket.on("error", (error) => {
     console.error("❌ Socket error:", error);
