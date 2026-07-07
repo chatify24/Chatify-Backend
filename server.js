@@ -576,6 +576,7 @@ socket.on("request_pending_messages", async () => {
       .from("messages")
       .select("*")
       .eq("receiver_email", userId)
+      .or("deleted_for_receiver.is.null,deleted_for_receiver.eq.false")
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -617,7 +618,7 @@ socket.on("request_pending_messages", async () => {
 });
 
   // Request sent messages with read status
-  socket.on("request_sent_messages_status", async () => {
+socket.on("request_sent_messages_status", async () => {
     try {
       console.log(`[v0] DEBUG: Client requested sent messages status for userId=${userId}`);
       
@@ -625,6 +626,7 @@ socket.on("request_pending_messages", async () => {
         .from("messages")
         .select("*")
         .eq("sender_email", userId)
+        .or("deleted_for_sender.is.null,deleted_for_sender.eq.false")
         .order("created_at", { ascending: true });
 
       console.log(`[v0] DEBUG: Query for sent messages by userId='${userId}' - error=${error}, messages=${sentMessages?.length || 0}`);
@@ -789,7 +791,7 @@ socket.on("delete_message_for_everyone", async (data) => {
       .from("messages")
       .update({ 
         is_deleted: true,
-        content: "message deleted"
+        content: JSON.stringify({ text: "message deleted" })
       })
       .eq("id", messageId);
 
