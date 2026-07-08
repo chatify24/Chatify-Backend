@@ -161,18 +161,11 @@ If this wasn't you, you can safely ignore this email.<br><br>
 };
 
 
-app.get('/app-version', async (req, res) => {
-  try {
-    const response = await fetch('https://api.github.com/repos/chatify24/chatify_android/releases/latest');
-    const data = await response.json();
-    
-    res.json({
-      version: data.tag_name.replace('v', ''),
-      apk_url: data.assets[0]?.browser_download_url
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch latest version" });
-  }
+app.get('/app-version', (req, res) => {
+  res.json({ 
+    version: '1.3.5',   
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.3.5/Chatify.apk'  // 👈 naya link
+  });
 });
 // Send OTP
 app.post("/send-otp", async (req, res) => {
