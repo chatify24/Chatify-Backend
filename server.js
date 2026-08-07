@@ -163,7 +163,7 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 app.get('/app-version', (req, res) => {
   res.json({ 
-    version: '1.9.0',   
+    version: '1.8.9',   
     apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.0/Chatify.apk'
   });
 });
