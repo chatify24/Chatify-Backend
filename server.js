@@ -11,7 +11,6 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import admin from "firebase-admin";
-import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import SibApiV3Sdk from 'sib-api-v3-sdk';
 import crypto from "crypto";
@@ -36,9 +35,8 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
-const serviceAccount = JSON.parse(
-  readFileSync(path.join(__dirname, "firebase-service-account.json"), "utf-8")
-);
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
