@@ -10,6 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
+import admin from "firebase-admin";
+import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import SibApiV3Sdk from 'sib-api-v3-sdk';
 import crypto from "crypto";
@@ -34,6 +36,26 @@ function stringToUUID(str) {
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
+const serviceAccount = JSON.parse(
+  readFileSync(path.join(__dirname, "firebase-service-account.json"), "utf-8")
+);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+const sendPushNotification = async (fcmToken, title, body) => {
+  if (!fcmToken) return;
+  try {
+    await admin.messaging().send({
+      token: fcmToken,
+      notification: { title, body },
+      android: { priority: "high" },
+    });
+    console.log("✅ Push sent to:", fcmToken);
+  } catch (err) {
+    console.error("❌ Push failed:", err.message);
+  }
+};
 cloudinary.v2.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
@@ -163,8 +185,8 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 app.get('/app-version', (req, res) => {
   res.json({ 
-    version: '1.8.9',   
-    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.0/Chatify.apk'
+    version: '1.9.4',   
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.4/Chatify.apk'
   });
 });
 // Send OTP
@@ -749,11 +771,32 @@ socket.on("request_sent_messages_status", async () => {
         io.to(sockId).emit("receive_message", messagePayload);
       });
 
-      if (recipientSockets.length > 0) {
-        console.log(`💬 Message sent from ${senderName} to ${recipientId}`);
-      } else {
-        console.log(`⚠️ Recipient ${recipientId} is offline - message saved with status='sent'`);
-      }
+     if (recipientSockets.length > 0) {
+  console.log(`💬 Message sent from ${senderName} to ${recipientId}`);
+} else {
+  console.log(`⚠️ Recipient ${recipientId} is offline - message saved with status='sent'`);
+
+  // 🔥 Recipient offline hai — push notification bhejo
+  const { data: recipientProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("fcm_token")
+    .eq("email", normalizedRecipientId)
+    .single();
+
+  if (recipientProfile?.fcm_token) {
+    let notifBody = content;
+    try {
+      const parsed = JSON.parse(content);
+      notifBody = parsed.text || content;
+    } catch {}
+    if (notifBody?.startsWith("[IMAGE]")) notifBody = "📷 Photo";
+    else if (notifBody?.startsWith("[AUDIO]")) notifBody = "🎤 Voice message";
+
+    await sendPushNotification(recipientProfile.fcm_token, senderName, notifBody);
+  } else {
+    console.log(`⚠️ No FCM token found for ${normalizedRecipientId} - cannot send push`);
+  }
+}
 
       // 🔥 Sender ke OTHER devices ko bhi bhejo (phone→laptop sync)
       const senderOtherSockets = getUserSockets(senderId).filter((id) => id !== socket.id);
