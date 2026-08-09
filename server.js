@@ -10,7 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
-import admin from "firebase-admin";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { fileURLToPath } from "url";
 import SibApiV3Sdk from 'sib-api-v3-sdk';
 import crypto from "crypto";
@@ -37,14 +38,14 @@ dotenv.config({
 });
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+const firebaseApp = initializeApp({
+  credential: cert(serviceAccount),
 });
 
 const sendPushNotification = async (fcmToken, title, body) => {
   if (!fcmToken) return;
   try {
-    await admin.messaging().send({
+    await getMessaging(firebaseApp).send({
       token: fcmToken,
       notification: { title, body },
       android: { priority: "high" },
