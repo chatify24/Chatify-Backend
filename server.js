@@ -47,16 +47,12 @@ const sendPushNotification = async (fcmToken, title, body) => {
   try {
     await getMessaging(firebaseApp).send({
       token: fcmToken,
-      notification: { title, body },
+      data: {
+        title: title,
+        body: body,
+      },
       android: {
         priority: "high",
-        notification: {
-          channelId: "messages",
-          icon: "ic_notification",
-          color: "#FF6A00",
-          sound: "default",
-          defaultSound: true,
-        },
       },
     });
     console.log("✅ Push sent to:", fcmToken);
@@ -193,8 +189,8 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 app.get('/app-version', (req, res) => {
   res.json({ 
-    version: '1.9.6',   
-    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.6/Chatify.apk'
+    version: '1.9.7',   
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.7/Chatify.apk'
   });
 });
 // Send OTP
