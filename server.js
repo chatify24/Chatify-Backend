@@ -37,7 +37,9 @@ dotenv.config({
   path: path.join(__dirname, ".env"),
 });
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const serviceAccount = JSON.parse(
+  Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf-8')
+);
 const firebaseApp = initializeApp({
   credential: cert(serviceAccount),
 });
@@ -189,8 +191,8 @@ If this wasn't you, you can safely ignore this email.<br><br>
 
 app.get('/app-version', (req, res) => {
   res.json({ 
-    version: '1.9.7',   
-    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.7/Chatify.apk'
+    version: '2.9.8',   
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.8/Chatify.apk'
   });
 });
 // Send OTP
