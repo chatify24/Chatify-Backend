@@ -192,7 +192,7 @@ If this wasn't you, you can safely ignore this email.<br><br>
 app.get('/app-version', (req, res) => {
   res.json({ 
     version: '2.9.8',   
-    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v1.9.8/Chatify.apk'
+    apk_url: 'https://github.com/chatify24/chatify_android/releases/download/v2.9.8/Chatify.apk'
   });
 });
 // Send OTP
