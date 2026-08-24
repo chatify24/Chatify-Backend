@@ -44,7 +44,7 @@ const firebaseApp = initializeApp({
   credential: cert(serviceAccount),
 });
 
-const sendPushNotification = async (fcmToken, title, body) => {
+const sendPushNotification = async (fcmToken, title, body, targetId, isGroup = false) => {
   if (!fcmToken) return;
   try {
     await getMessaging(firebaseApp).send({
@@ -52,6 +52,8 @@ const sendPushNotification = async (fcmToken, title, body) => {
       data: {
         title: title,
         body: body,
+        targetId: targetId || "",     // 🔥 NEW
+        isGroup: String(isGroup),      // 🔥 NEW
       },
       android: {
         priority: "high",
@@ -798,7 +800,7 @@ socket.on("request_sent_messages_status", async () => {
     if (notifBody?.startsWith("[IMAGE]")) notifBody = "📷 Photo";
     else if (notifBody?.startsWith("[AUDIO]")) notifBody = "🎤 Voice message";
 
-    await sendPushNotification(recipientProfile.fcm_token, senderName, notifBody);
+    await sendPushNotification(recipientProfile.fcm_token, senderName, notifBody, senderId, false);
   } else {
     console.log(`⚠️ No FCM token found for ${normalizedRecipientId} - cannot send push`);
   }
@@ -1090,6 +1092,78 @@ socket.on("disconnect", () => {
     console.error("❌ Socket error:", error);
   });
 });
+app.post("/group-message-webhook", async (req, res) => {
+  try {
+    const secret = req.headers["x-webhook-secret"];
+    if (secret !== process.env.GROUP_WEBHOOK_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const payload = req.body;
+    if (payload.type !== "INSERT" || payload.table !== "group_messages") {
+      return res.status(200).json({ skipped: true });
+    }
+
+    const msg = payload.record;
+    const isSystemMsg = typeof msg.content === "string" && msg.content.startsWith("[SYSTEM]");
+    if (isSystemMsg) {
+      return res.status(200).json({ skipped: true, reason: "system message" });
+    }
+
+    const { data: group } = await supabaseAdmin
+      .from("groups")
+      .select("name")
+      .eq("id", msg.group_id)
+      .single();
+
+    const { data: senderProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("name")
+      .eq("email", msg.sender_email)
+      .single();
+
+    const senderName = senderProfile?.name || msg.sender_email;
+    const groupName = group?.name || "Group";
+
+    const { data: members } = await supabaseAdmin
+      .from("group_members")
+      .select("member_email")
+      .eq("group_id", msg.group_id)
+      .neq("member_email", msg.sender_email);
+
+    if (!members || members.length === 0) {
+      return res.status(200).json({ sent: 0 });
+    }
+
+    const memberEmails = members.map((m) => m.member_email);
+
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("email, fcm_token")
+      .in("email", memberEmails);
+
+    let notifBody = msg.content;
+    if (notifBody?.startsWith("[IMAGE]")) notifBody = "📷 Photo";
+    else if (notifBody?.startsWith("[AUDIO]")) notifBody = "🎤 Voice message";
+
+    const title = groupName;
+    const body = `${senderName}: ${notifBody}`;
+
+    let sentCount = 0;
+    for (const profile of profiles || []) {
+      if (profile.fcm_token && !isUserOnline(profile.email.toLowerCase().trim())) {
+        await sendPushNotification(profile.fcm_token, title, body, msg.group_id, true);
+        sentCount++;
+      }
+    }
+
+    res.json({ success: true, sent: sentCount });
+  } catch (err) {
+    console.error("❌ Group notification webhook error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 
 // 🔥 GET BLOCKED USERS - Load blocks on initial page load
