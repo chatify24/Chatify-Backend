@@ -49,14 +49,19 @@ const sendPushNotification = async (fcmToken, title, body, targetId, isGroup = f
   try {
     await getMessaging(firebaseApp).send({
       token: fcmToken,
-      data: {
+      notification: {
         title: title,
         body: body,
-        targetId: targetId || "",     // 🔥 NEW
-        isGroup: String(isGroup),      // 🔥 NEW
+      },
+      data: {
+        contactId: targetId || "",
+        isGroup: String(isGroup),
       },
       android: {
         priority: "high",
+        notification: {
+          channelId: "messages",
+        },
       },
     });
     console.log("✅ Push sent to:", fcmToken);
@@ -1258,6 +1263,32 @@ app.post("/accept-friend-request", async (req, res) => {
   } catch (err) {
     console.error("❌ Error in accept-friend-request:", err);
     res.status(500).json({ error: "Server error" });
+  }
+});
+// NEW - add this route
+app.post("/contact-form", async (req, res) => {
+  const { name, email, message } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: "Name, email and message are required" });
+  }
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:20px;">
+      <h2 style="color:#ff6a00;">New Contact Form Submission</h2>
+      <p><strong>Name:</strong> ${name}</p>
+      <p><strong>Email:</strong> ${email}</p>
+      <p><strong>Message:</strong></p>
+      <p style="white-space:pre-wrap;color:#555;">${message}</p>
+    </div>
+  `;
+
+  try {
+    await sendEmail("chatifyteam.24@gmail.com", `New Contact: ${name}`, html);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Contact form email failed:", err.message);
+    res.status(500).json({ error: "Failed to send message" });
   }
 });
 
