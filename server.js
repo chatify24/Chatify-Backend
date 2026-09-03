@@ -1273,15 +1273,80 @@ app.post("/contact-form", async (req, res) => {
     return res.status(400).json({ error: "Name, email and message are required" });
   }
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:20px;">
-      <h2 style="color:#ff6a00;">New Contact Form Submission</h2>
-      <p><strong>Name:</strong> ${name}</p>
-      <p><strong>Email:</strong> ${email}</p>
-      <p><strong>Message:</strong></p>
-      <p style="white-space:pre-wrap;color:#555;">${message}</p>
-    </div>
-  `;
+ const html = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chatify Contact Form</title>
+</head>
+
+<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:40px 10px;">
+<tr>
+<td align="center">
+
+<table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;">
+
+<tr>
+<td style="text-align:center;padding-bottom:20px;">
+
+<img
+src="https://res.cloudinary.com/dpaiyfwdu/image/upload/v1776595107/chatify_gzok1x.png"
+width="150"
+style="display:block;margin:auto;margin-bottom:10px;"
+alt="Chatify"
+/>
+
+<div style="font-size:28px;font-weight:700;color:#ff6a00;">
+New Contact Form Submission
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="text-align:left;padding:0 35px 30px 35px;">
+
+<div style="font-size:15px;color:#555;line-height:24px;margin-bottom:20px;">
+<strong style="color:#333;">Name:</strong> ${name}<br>
+<strong style="color:#333;">Email:</strong> ${email}
+</div>
+
+<div style="
+background:#fdf1e8;
+border-radius:8px;
+padding:20px;
+font-size:15px;
+color:#333;
+line-height:24px;
+white-space:pre-wrap;
+margin-bottom:25px;
+">
+${message}
+</div>
+
+<hr style="border:none;border-top:1px solid #eee;margin:25px 0;">
+
+<div style="font-size:14px;color:#777;line-height:22px;">
+This message was submitted via the Chatify contact form.<br><br>
+© ${new Date().getFullYear()} Chatify. All rights reserved.
+</div>
+
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`;
 
   try {
     await sendEmail("chatifyteam.24@gmail.com", `New Contact: ${name}`, html);
