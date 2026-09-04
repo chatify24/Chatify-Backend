@@ -1338,9 +1338,7 @@ margin-bottom:25px;
 display:inline-block;
 width:100%;
 box-sizing:border-box;
-">
-${message}
-</div>
+">${message.trim()}</div>
 
 <hr style="border:none;border-top:1px solid #eee;margin:25px 0;">
 
