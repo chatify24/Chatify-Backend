@@ -1272,6 +1272,12 @@ app.post("/contact-form", async (req, res) => {
   if (!name || !email || !message) {
     return res.status(400).json({ error: "Name, email and message are required" });
   }
+   const emailRegex = /^[^\s@]+@[^\s@]+(\.[a-zA-Z]{2,6})+$/;
+
+  if (!emailRegex.test(email.trim())) {
+    return res.status(400).json({ error: "Please enter a valid email address" });
+  }
+
 
  const html = `
 <!DOCTYPE html>
@@ -1315,15 +1321,23 @@ New Contact Form Submission
 <strong style="color:#333;">Email:</strong> ${email}
 </div>
 
+<div style="font-size:13px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:600;">
+Message
+</div>
+
 <div style="
 background:#fdf1e8;
 border-radius:8px;
-padding:20px;
+padding:16px 18px;
 font-size:15px;
 color:#333;
-line-height:24px;
+line-height:22px;
 white-space:pre-wrap;
+word-wrap:break-word;
 margin-bottom:25px;
+display:inline-block;
+width:100%;
+box-sizing:border-box;
 ">
 ${message}
 </div>
