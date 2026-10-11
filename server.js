@@ -10,8 +10,6 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
-import { initializeApp, cert } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
 import { fileURLToPath } from "url";
 import SibApiV3Sdk from 'sib-api-v3-sdk';
 import crypto from "crypto";
@@ -37,38 +35,7 @@ dotenv.config({
   path: path.join(__dirname, ".env"),
 });
 
-const serviceAccount = JSON.parse(
-  Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf-8')
-);
-const firebaseApp = initializeApp({
-  credential: cert(serviceAccount),
-});
 
-const sendPushNotification = async (fcmToken, title, body, targetId, isGroup = false) => {
-  if (!fcmToken) return;
-  try {
-    await getMessaging(firebaseApp).send({
-      token: fcmToken,
-      notification: {
-        title: title,
-        body: body,
-      },
-      data: {
-        contactId: targetId || "",
-        isGroup: String(isGroup),
-      },
-      android: {
-        priority: "high",
-        notification: {
-          channelId: "messages",
-        },
-      },
-    });
-    console.log("✅ Push sent to:", fcmToken);
-  } catch (err) {
-    console.error("❌ Push failed:", err.message);
-  }
-};
 cloudinary.v2.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
@@ -700,127 +667,151 @@ socket.on("request_sent_messages_status", async () => {
 
   // Send message
   socket.on("send_message", async (data) => {
-    try {
-      const { conversationId, content, recipientId, timestamp, messageId } = data;
-      const senderId = userId;
-      const senderName = userName;
-      const senderAvatar = userAvatar;
+  try {
+    const { conversationId, content, recipientId, timestamp, messageId } = data;
 
-      // 🔥 Normalize recipient email
-      const normalizedRecipientId = recipientId?.toLowerCase().trim();
+    const senderId = userId;
+    const senderName = userName;
+    const senderAvatar = userAvatar;
 
-      console.log(`[v0] DEBUG: send_message - from=${senderId} to=${normalizedRecipientId} conversationId=${conversationId}`);
+    // 🔥 Normalize recipient email
+    const normalizedRecipientId = recipientId?.toLowerCase().trim();
 
-      // 🔥 CHECK IF BLOCKED - Query recipient's blocked list
-      const { data: recipientPrefs, error: blockError } = await supabaseAdmin
+    console.log(
+      `[v0] DEBUG: send_message - from=${senderId} to=${normalizedRecipientId} conversationId=${conversationId}`
+    );
+
+    // 🔥 CHECK IF BLOCKED
+    const { data: recipientPrefs, error: blockError } =
+      await supabaseAdmin
         .from("user_preferences")
         .select("blocked")
         .eq("user_id", normalizedRecipientId)
         .single();
 
-      if (!blockError && recipientPrefs?.blocked && Array.isArray(recipientPrefs.blocked)) {
-        const isBlocked = recipientPrefs.blocked.some((blockedEmail) => 
+    if (
+      !blockError &&
+      recipientPrefs?.blocked &&
+      Array.isArray(recipientPrefs.blocked)
+    ) {
+      const isBlocked = recipientPrefs.blocked.some(
+        (blockedEmail) =>
           blockedEmail.toLowerCase().trim() === senderId
+      );
+
+      if (isBlocked) {
+        console.log(
+          `🚫 Cannot send message: ${normalizedRecipientId} blocked ${senderId}`
         );
-        if (isBlocked) {
-          console.log(`🚫 Cannot send message: ${normalizedRecipientId} blocked ${senderId}`);
-          socket.emit("message_blocked", { error: "User has blocked you" });
-          return; // Don't send or save the message
-        }
+
+        socket.emit("message_blocked", {
+          error: "User has blocked you",
+        });
+
+        return;
       }
-
-      // Convert conversation_id string to valid UUID
-      const conversationUUID = stringToUUID(conversationId);
-      console.log(`[v0] DEBUG: Converted conversationId '${conversationId}' to UUID '${conversationUUID}'`);
-
-      // Save message to database with status "sent"
-      const { error, data: insertedData } = await supabaseAdmin
-        .from("messages")
-        .insert([
-          {
-            conversation_id: conversationUUID,
-            sender_id: senderId,
-            sender_email: senderId,
-            sender_name: senderName,
-            sender_avatar: senderAvatar,
-            receiver_email: normalizedRecipientId, // 🔥 Use normalized recipient
-            content: content,
-            created_at: new Date(timestamp).toISOString(),
-            status: "sent", // 🔥 Add delivery status
-            read_at: null, // 🔥 Will be updated when recipient reads
-          },
-        ])
-        .select();
-        socket.emit("message_id_confirmed", {
-  clientId: messageId,           // temp ID jo client ne banaya
-  serverId: insertedData?.[0]?.id // DB ka real UUID
-});
-
-      if (error) {
-        console.error("❌ Error saving message:", error);
-      } else {
-          console.log("✅ Inserted message ID:", insertedData?.[0]?.id);
-  console.log("✅ Client temp ID:", messageId);
-        console.log(`[v0] DEBUG: Message saved to DB - ID=${insertedData?.[0]?.id}, status=sent`);
-      }
-
-// Send message to recipient (all their devices)
-      const recipientSockets = getUserSockets(normalizedRecipientId);
-      const messagePayload = {
-        id: insertedData?.[0]?.id,
-        clientId: messageId,
-        senderId,
-        senderName,
-        recipientId,
-        senderAvatar,
-        content,
-        replyTo: data.replyTo,
-        timestamp: new Date(timestamp),
-        conversationId,
-        status: "sent",
-      };
-
-      recipientSockets.forEach((sockId) => {
-        io.to(sockId).emit("receive_message", messagePayload);
-      });
-
-     if (recipientSockets.length > 0) {
-  console.log(`💬 Message sent from ${senderName} to ${recipientId}`);
-} else {
-  console.log(`⚠️ Recipient ${recipientId} is offline - message saved with status='sent'`);
-
-  // 🔥 Recipient offline hai — push notification bhejo
-  const { data: recipientProfile } = await supabaseAdmin
-    .from("profiles")
-    .select("fcm_token")
-    .eq("email", normalizedRecipientId)
-    .single();
-
-  if (recipientProfile?.fcm_token) {
-    let notifBody = content;
-    try {
-      const parsed = JSON.parse(content);
-      notifBody = parsed.text || content;
-    } catch {}
-    if (notifBody?.startsWith("[IMAGE]")) notifBody = "📷 Photo";
-    else if (notifBody?.startsWith("[AUDIO]")) notifBody = "🎤 Voice message";
-
-    await sendPushNotification(recipientProfile.fcm_token, senderName, notifBody, senderId, false);
-  } else {
-    console.log(`⚠️ No FCM token found for ${normalizedRecipientId} - cannot send push`);
-  }
-}
-
-      // 🔥 Sender ke OTHER devices ko bhi bhejo (phone→laptop sync)
-      const senderOtherSockets = getUserSockets(senderId).filter((id) => id !== socket.id);
-      senderOtherSockets.forEach((sockId) => {
-        io.to(sockId).emit("receive_message", messagePayload);
-      });
-    } catch (err) {
-      console.error("❌ Error handling message:", err);
-      socket.emit("message_error", { error: "Failed to send message" });
     }
-  });
+
+    // 🔥 Convert conversation_id string to valid UUID
+    const conversationUUID = stringToUUID(conversationId);
+
+    console.log(
+      `[v0] DEBUG: Converted conversationId '${conversationId}' to UUID '${conversationUUID}'`
+    );
+
+    // 🔥 Save message to database
+    const { error, data: insertedData } = await supabaseAdmin
+      .from("messages")
+      .insert([
+        {
+          conversation_id: conversationUUID,
+          sender_id: senderId,
+          sender_email: senderId,
+          sender_name: senderName,
+          sender_avatar: senderAvatar,
+          receiver_email: normalizedRecipientId,
+          content: content,
+          created_at: new Date(timestamp).toISOString(),
+          status: "sent",
+          read_at: null,
+        },
+      ])
+      .select();
+
+    socket.emit("message_id_confirmed", {
+      clientId: messageId,
+      serverId: insertedData?.[0]?.id,
+    });
+
+    if (error) {
+      console.error("❌ Error saving message:", error);
+    } else {
+      console.log(
+        "✅ Inserted message ID:",
+        insertedData?.[0]?.id
+      );
+
+      console.log(
+        "✅ Client temp ID:",
+        messageId
+      );
+
+      console.log(
+        `[v0] DEBUG: Message saved to DB - ID=${insertedData?.[0]?.id}, status=sent`
+      );
+    }
+
+    // 🔥 Send message to recipient (all their devices)
+    const recipientSockets = getUserSockets(normalizedRecipientId);
+
+    const messagePayload = {
+      id: insertedData?.[0]?.id,
+      clientId: messageId,
+      senderId,
+      senderName,
+      recipientId,
+      senderAvatar,
+      content,
+      replyTo: data.replyTo,
+      timestamp: new Date(timestamp),
+      conversationId,
+      status: "sent",
+    };
+
+    recipientSockets.forEach((sockId) => {
+      io.to(sockId).emit("receive_message", messagePayload);
+    });
+
+    if (recipientSockets.length > 0) {
+      console.log(`💬 Message sent from ${senderName} to ${recipientId}`);
+    } else {
+      console.log(`⚠️ Recipient ${recipientId} is offline - message saved with status='sent'`);
+    }
+
+    // 🔥 Sender ke OTHER devices ko bhi bhejo
+    // (phone → laptop sync)
+    const senderOtherSockets = getUserSockets(senderId).filter(
+      (id) => id !== socket.id
+    );
+
+    senderOtherSockets.forEach((sockId) => {
+      io.to(sockId).emit(
+        "receive_message",
+        messagePayload
+      );
+    });
+
+  } catch (err) {
+    console.error(
+      "❌ Error handling message:",
+      err
+    );
+
+    socket.emit("message_error", {
+      error: "Failed to send message",
+    });
+  }
+});
        
 
   // Typing indicator
@@ -1097,77 +1088,7 @@ socket.on("disconnect", () => {
     console.error("❌ Socket error:", error);
   });
 });
-app.post("/group-message-webhook", async (req, res) => {
-  try {
-    const secret = req.headers["x-webhook-secret"];
-    if (secret !== process.env.GROUP_WEBHOOK_SECRET) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
 
-    const payload = req.body;
-    if (payload.type !== "INSERT" || payload.table !== "group_messages") {
-      return res.status(200).json({ skipped: true });
-    }
-
-    const msg = payload.record;
-    const isSystemMsg = typeof msg.content === "string" && msg.content.startsWith("[SYSTEM]");
-    if (isSystemMsg) {
-      return res.status(200).json({ skipped: true, reason: "system message" });
-    }
-
-    const { data: group } = await supabaseAdmin
-      .from("groups")
-      .select("name")
-      .eq("id", msg.group_id)
-      .single();
-
-    const { data: senderProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("name")
-      .eq("email", msg.sender_email)
-      .single();
-
-    const senderName = senderProfile?.name || msg.sender_email;
-    const groupName = group?.name || "Group";
-
-    const { data: members } = await supabaseAdmin
-      .from("group_members")
-      .select("member_email")
-      .eq("group_id", msg.group_id)
-      .neq("member_email", msg.sender_email);
-
-    if (!members || members.length === 0) {
-      return res.status(200).json({ sent: 0 });
-    }
-
-    const memberEmails = members.map((m) => m.member_email);
-
-    const { data: profiles } = await supabaseAdmin
-      .from("profiles")
-      .select("email, fcm_token")
-      .in("email", memberEmails);
-
-    let notifBody = msg.content;
-    if (notifBody?.startsWith("[IMAGE]")) notifBody = "📷 Photo";
-    else if (notifBody?.startsWith("[AUDIO]")) notifBody = "🎤 Voice message";
-
-    const title = groupName;
-    const body = `${senderName}: ${notifBody}`;
-
-    let sentCount = 0;
-    for (const profile of profiles || []) {
-      if (profile.fcm_token && !isUserOnline(profile.email.toLowerCase().trim())) {
-        await sendPushNotification(profile.fcm_token, title, body, msg.group_id, true);
-        sentCount++;
-      }
-    }
-
-    res.json({ success: true, sent: sentCount });
-  } catch (err) {
-    console.error("❌ Group notification webhook error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 
 
